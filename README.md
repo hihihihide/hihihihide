@@ -8,6 +8,7 @@
 |--------|-----|------|
 | 公式サイト | https://www.city.tomakomai.hokkaido.jp/gikai/ | 議会報告PDF・各種資料 |
 | インターネット中継 | https://tomakomai-city.stream.jfit.co.jp/ | 会議映像・会議録リンク |
+| 会議録検索システム | https://ssp.kaigiroku.net/tenant/tomakomai/ | 議事録全文・会議録PDF（DiscussNetPremium） |
 
 ## セットアップ
 
@@ -43,6 +44,7 @@ python scraper.py --output-dir data --pdf --text
 | `--pdf` | PDFをダウンロードする | なし |
 | `--text` | PDFからテキストを抽出する | なし |
 | `--skip-stream` | 中継サイトをスキップ | なし |
+| `--skip-kaigiroku` | 会議録検索システムをスキップ | なし |
 | `--delay SEC` | リクエスト間隔（秒） | `1.0` |
 
 ## 出力ファイル

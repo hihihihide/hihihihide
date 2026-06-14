@@ -1,14 +1,19 @@
 """
 苫小牧市議会 議事録スクレイパー
 
-苫小牧市議会の公式サイトとインターネット中継システムから
+苫小牧市議会の公式サイト・インターネット中継システム・会議録検索システムから
 全ての議事録・会議録を収集・ダウンロードします。
+
+収集元:
+    - https://www.city.tomakomai.hokkaido.jp/gikai/  (公式サイト)
+    - https://tomakomai-city.stream.jfit.co.jp/       (インターネット中継)
+    - https://ssp.kaigiroku.net/tenant/tomakomai/    (会議録検索システム)
 
 Usage:
     python scraper.py [--output-dir data] [--pdf] [--text]
 
 注意:
-    苫小牧市公式サイトは日本国内からのアクセスを想定しています。
+    各サイトは日本国内からのアクセスを想定しています。
     海外のIPアドレスや一部のクラウド環境からは403エラーが返される場合があります。
 """
 
@@ -28,6 +33,16 @@ BASE_URL = "https://www.city.tomakomai.hokkaido.jp"
 GIKAI_URL = f"{BASE_URL}/gikai/"
 STREAM_BASE = "https://tomakomai-city.stream.jfit.co.jp"
 GIKAI_ID = "207"
+
+# 会議録検索システム (ssp.kaigiroku.net / DiscussNetPremium)
+KAIGIROKU_BASE = "https://ssp.kaigiroku.net/tenant/tomakomai"
+KAIGIROKU_PAGES = [
+    "/SpTop.html",
+    "/pg/index.html",
+    "/SpMinuteBrowse.html",
+    "/SpSearch.html",
+    "/index.html",
+]
 
 HEADERS = {
     "User-Agent": (
@@ -118,6 +133,11 @@ def is_council_url(url: str) -> bool:
     return False
 
 
+def is_kaigiroku_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.netloc == "ssp.kaigiroku.net" and "/tenant/tomakomai" in parsed.path
+
+
 def is_pdf(url: str) -> bool:
     return urlparse(url).path.lower().endswith(".pdf")
 
@@ -182,6 +202,56 @@ def crawl_council_site(session: requests.Session, output_dir: Path) -> list[dict
     return pdf_records
 
 
+def crawl_kaigiroku_site(session: requests.Session) -> list[dict]:
+    """会議録検索システム (ssp.kaigiroku.net) から会議録・PDFリンクを収集する。"""
+    print("\n=== 会議録検索システムのクロール (ssp.kaigiroku.net) ===")
+    records: list[dict] = []
+    visited: set[str] = set()
+    queue: list[str] = [KAIGIROKU_BASE + p for p in KAIGIROKU_PAGES]
+
+    while queue:
+        url = queue.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
+
+        print(f"  取得: {url}")
+        r = fetch(session, url, delay=1.0)
+        if r is None:
+            continue
+
+        soup = parse_html(r)
+
+        for link in extract_links(soup, url):
+            lurl = link["url"]
+            if lurl in visited:
+                continue
+
+            if is_pdf(lurl) and is_kaigiroku_url(lurl):
+                entry = {"url": lurl, "text": link["text"], "source": "kaigiroku/pdf"}
+                if lurl not in {rec["url"] for rec in records}:
+                    records.append(entry)
+                    print(f"    [PDF] {link['text']} → {lurl}")
+
+            elif is_kaigiroku_url(lurl):
+                # 会議録表示・検索ページを収集
+                parsed = urlparse(lurl)
+                interesting = any(kw in parsed.path for kw in (
+                    "SpMinuteView", "SpMinuteBrowse", "MinuteView",
+                    "SpSearch", "SpTop", "index",
+                ))
+                if interesting and lurl not in queue:
+                    if any(kw in lurl for kw in ("View", "Browse", "Search")):
+                        entry = {"url": lurl, "text": link["text"], "source": "kaigiroku/page"}
+                        if lurl not in {rec["url"] for rec in records}:
+                            records.append(entry)
+                            print(f"    [PAGE] {link['text']} → {lurl}")
+                    queue.append(lurl)
+
+    print(f"  会議録検索システムから: {len(records)}件")
+    return records
+
+
 def crawl_stream_site(session: requests.Session) -> list[dict]:
     """インターネット中継サイトから会議録リンクを収集する。"""
     print("\n=== インターネット中継サイトのクロール ===")
@@ -238,6 +308,7 @@ def main():
     parser.add_argument("--pdf", action="store_true", help="PDFをダウンロードする")
     parser.add_argument("--text", action="store_true", help="PDFからテキストを抽出する")
     parser.add_argument("--skip-stream", action="store_true", help="中継サイトをスキップ")
+    parser.add_argument("--skip-kaigiroku", action="store_true", help="会議録検索システムをスキップ")
     parser.add_argument("--delay", type=float, default=1.0, help="リクエスト間隔(秒) (default: 1.0)")
     args = parser.parse_args()
 
@@ -248,21 +319,27 @@ def main():
 
     # 接続確認
     print("接続確認中...")
-    r = fetch(session, GIKAI_URL, delay=0)
-    if r is None:
-        print(
-            "\n[WARNING] 苫小牧市公式サイトへの接続に失敗しました。\n"
-            "  - 日本国内のIP、またはVPN経由で実行してください。\n"
-            "  - スクレイパーは継続しますが、結果が少なくなる場合があります。\n"
-        )
-    else:
-        print("  接続成功。")
+    for check_url, label in [
+        (GIKAI_URL, "公式サイト"),
+        (KAIGIROKU_BASE + "/SpTop.html", "会議録検索システム"),
+    ]:
+        r = fetch(session, check_url, delay=0)
+        if r is None:
+            print(
+                f"\n[WARNING] {label} ({check_url}) への接続に失敗しました。\n"
+                "  - 日本国内のIP、またはVPN経由で実行してください。\n"
+                "  - スクレイパーは継続しますが、結果が少なくなる場合があります。\n"
+            )
+        else:
+            print(f"  [{label}] 接続成功。")
 
     # クロール
     all_records: list[dict] = []
     all_records.extend(crawl_council_site(session, out))
     if not args.skip_stream:
         all_records.extend(crawl_stream_site(session))
+    if not args.skip_kaigiroku:
+        all_records.extend(crawl_kaigiroku_site(session))
 
     # 重複除去
     seen: set[str] = set()
