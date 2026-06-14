@@ -36,6 +36,12 @@ python scraper.py --output-dir data --pdf
 python scraper.py --output-dir data --pdf --text
 ```
 
+### 会議録HTML + テキスト抽出 (kaigiroku.net)
+
+```bash
+python scraper.py --output-dir data --minutes
+```
+
 ### オプション一覧
 
 | オプション | 説明 | デフォルト |
@@ -45,6 +51,7 @@ python scraper.py --output-dir data --pdf --text
 | `--text` | PDFからテキストを抽出する | なし |
 | `--skip-stream` | 中継サイトをスキップ | なし |
 | `--skip-kaigiroku` | 会議録検索システムをスキップ | なし |
+| `--minutes` | 会議録HTMLをダウンロードしてテキスト抽出（kaigiroku.net） | なし |
 | `--delay SEC` | リクエスト間隔（秒） | `1.0` |
 
 ## 出力ファイル
@@ -54,7 +61,8 @@ data/
 ├── records.json     # 全収集レコード（URL・タイトル・ローカルパス）
 ├── pages.json       # クロールしたHTMLページ一覧
 ├── pdfs/            # ダウンロードしたPDF（--pdf 使用時）
-└── texts/           # 抽出したテキスト（--text 使用時）
+├── minutes/         # ダウンロードした会議録HTML（--minutes 使用時）
+└── texts/           # 抽出したテキスト（--text / --minutes 使用時）
 ```
 
 ## 注意事項
